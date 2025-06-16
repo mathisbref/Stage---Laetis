@@ -1,0 +1,328 @@
+{% extends 'layouts/app.html' %}
+{% load material_form %}
+{% load outils_extras humanize %}
+
+{% block title %}Matrice Points Collecte - Colactis{% endblock %}
+
+{% block content %}
+
+{% if donnees_json %}
+<script type="text/javascript">
+    var donnees = JSON.parse(`{{ donnees_json|safe }}`);
+    var trajets = donnees.trajets;
+    var moyennes = donnees.moyennes;
+
+    console.log("Données JSON (trajets) :", trajets);
+    console.log("Données JSON (moyennes) :", moyennes);
+
+    var trajetsParPage = 8; 
+    var pageActuelle = 1; 
+
+    window.onload = function() {
+        genererTableauTrajets();
+        if (moyennes.length > 0) {
+            genererMatrice(moyennes, 'duree_m', 'moyenne-table-head', 'moyenne-table-body', 'legend-moyenne');
+            genererMatrice(moyennes, 'freq', 'freq-table-head', 'freq-table-body', 'legend-freq');
+            genererMatrice(moyennes, 'temps_min', 'min-table-head', 'min-table-body', 'legend-min');
+            genererMatrice(moyennes, 'temps_max', 'max-table-head', 'max-table-body', 'legend-max');
+            genererMatrice(moyennes, 'ecart_type', 'ecart_type-head', 'ecart_type-body', 'legend-ecart_type');
+        }
+        afficherTableau('trajets-container');
+    };
+
+
+    function genererTableauTrajets() {
+        var t1body = document.getElementById('trajets-table-body');  
+        t1body.innerHTML = "";
+
+        var toutesLesLignes = [];
+
+        // 👉 On filtre les trajets pour ne garder que ceux qui ont des étapes
+        var trajetsValid = trajets.filter(t => t.etapes && t.etapes.length > 0);
+
+        var debut = (pageActuelle - 1) * trajetsParPage;
+        var fin = debut + trajetsParPage;
+        var trajetsPage = trajetsValid.slice(debut, fin);
+
+        trajetsPage.forEach(function(donnee) {
+            donnee.etapes.forEach(function(etape, index) {
+                var tr = document.createElement('tr'); 
+
+                if (index === 0) {
+                    var tdDate = document.createElement('td');
+                    tdDate.textContent = donnee.date;
+                    tdDate.rowSpan = donnee.etapes.length;  
+                    tr.appendChild(tdDate);
+                }
+
+                var tdHeuDep = document.createElement('td');
+                tdHeuDep.textContent = etape.heureDep || "N/A";
+                tr.appendChild(tdHeuDep);
+
+                var tdLieuDep = document.createElement('td');
+                tdLieuDep.textContent = etape.lieuDep || "N/A";
+                tr.appendChild(tdLieuDep);
+
+                var tdArrow = document.createElement('td');
+                tdArrow.textContent = "----->";
+                tr.appendChild(tdArrow);
+
+                var tdLieuArr = document.createElement('td');
+                tdLieuArr.textContent = etape.lieuArr || "—";
+                tr.appendChild(tdLieuArr);
+
+                var tdDuree = document.createElement('td');
+                tdDuree.textContent = etape.duree || "—";
+                tr.appendChild(tdDuree);
+
+                var tdHeuArr = document.createElement('td');
+                tdHeuArr.textContent = etape.heureArr || "N/A";
+                tr.appendChild(tdHeuArr);
+
+                toutesLesLignes.push(tr);
+            });
+        });
+
+        toutesLesLignes.forEach(tr => t1body.appendChild(tr));
+
+        afficherBoutonsPagination(trajetsValid.length);
+    }
+
+    function afficherBoutonsPagination(totalTrajets) {
+        var paginationDiv = document.getElementById("pagination");
+        paginationDiv.innerHTML = "";
+
+        var totalPages = Math.ceil(totalTrajets / trajetsParPage);
+
+        if (totalPages > 1) {
+            var btnPrecedent = document.createElement("button");
+            btnPrecedent.textContent = "Précédent";
+            btnPrecedent.disabled = (pageActuelle === 1);
+            btnPrecedent.onclick = function () {
+                if (pageActuelle > 1) {
+                    pageActuelle--;
+                    genererTableauTrajets();
+                }
+            };
+            paginationDiv.appendChild(btnPrecedent);
+
+            for (let i = 1; i <= totalPages; i++) {
+                let btnPage = document.createElement("button");
+                btnPage.textContent = i;
+                btnPage.classList.add("pagination-btn");
+                if (i === pageActuelle) {
+                    btnPage.style.fontWeight = "bold";
+                }
+                btnPage.onclick = function () {
+                    pageActuelle = i;
+                    genererTableauTrajets();
+                };
+                paginationDiv.appendChild(btnPage);
+            }
+
+            var btnSuivant = document.createElement("button");
+            btnSuivant.textContent = "Suivant";
+            btnSuivant.disabled = (pageActuelle === totalPages);
+            btnSuivant.onclick = function () {
+                if (pageActuelle < totalPages) {
+                    pageActuelle++;
+                    genererTableauTrajets();
+                }
+            };
+            paginationDiv.appendChild(btnSuivant);
+        }
+    }
+
+
+
+    function afficherTableau(id) {
+        document.querySelectorAll('.table-container').forEach(el => el.style.display = 'none');
+        document.getElementById(id).style.display = 'block';
+    }
+
+    function genererMatrice(moyennes, type, tableHeadId, tableBodyId, legend) {
+        var tableHead = document.getElementById(tableHeadId);  
+        var tableBody = document.getElementById(tableBodyId); 
+        
+        var legend = document.getElementById(legend);
+
+        // Effacer le contenu précédent
+        tableHead.innerHTML = "";
+        tableBody.innerHTML = "";
+        legend.innerHTML = "";
+
+        // Première ligne : en-tête avec les noms des sites
+        var trHead = document.createElement('tr');
+        
+        // Première cellule vide (coin supérieur gauche)
+        var thBlanc = document.createElement('th');
+        thBlanc.textContent = " ";
+        trHead.appendChild(thBlanc);
+
+        // Ajouter les surnoms des sites en tant qu'en-tête de colonne
+        moyennes.forEach(function(site) {
+            var thNom = document.createElement('th');
+            thNom.textContent = site.surnom || "N/A";
+            trHead.appendChild(thNom);
+        });
+
+        tableHead.appendChild(trHead);
+
+        // Remplissage du corps du tableau (matrice)
+        moyennes.forEach(function(siteLigne) {
+            var tr = document.createElement('tr'); 
+
+            // Première colonne (nom du site)
+            var tdNom = document.createElement('td');
+            tdNom.textContent = siteLigne.surnom || "N/A";
+            tr.appendChild(tdNom);
+
+            // Ajouter les colonnes (valeurs selon le type)
+            moyennes.forEach(function(siteColonne) {
+                var td = document.createElement('td');
+
+                if (siteLigne.id === siteColonne.id) {
+                    td.textContent = "-"; 
+                } else {
+                    // Trouver la valeur correspondant au croisement
+                    var moyenne = siteLigne.moyenne_trajet.find(m => m.dest === siteColonne.nom);
+                    td.textContent = moyenne ? moyenne[type] : "x";
+            
+                }
+
+                tr.appendChild(td);
+            });
+
+            tableBody.appendChild(tr);
+        });
+
+        moyennes.forEach(function(site) {
+            var surnom = document.createElement('span');
+            var nom = document.createElement('span');
+            var br = document.createElement('br');
+            surnom.textContent = site.surnom || "N/A";
+            nom.textContent = " : " + site.nom || "N/A";
+            legend.appendChild(surnom);
+            legend.appendChild(nom);
+            legend.appendChild(br);
+        });
+    }
+
+</script>
+
+<div id="conteneur" style="display: flex; flex-direction: column; align-items: center;">
+    <div>
+        <button onclick="afficherTableau('trajets-container')">Trajets</button>
+        <button onclick="afficherTableau('moyenne-container')">Moyennes</button>
+        <button onclick="afficherTableau('freq-container')">Fréquences</button>
+        <button onclick="afficherTableau('min-container')">Temps Min</button>
+        <button onclick="afficherTableau('max-container')">Temps Max</button>
+        <button onclick="afficherTableau('ecart_type-container')">Ecart Type</button>
+    </div>
+
+    <div id="trajets-container" class="table-container">
+        <div id="pagination" style="text-align: center; margin: 10px 0;"></div>
+    
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Heure de départ</th>
+                    <th>Départ</th> 
+                    <th></th>
+                    <th>Arrivée</th>
+                    <th>Durée</th>
+                    <th>Heure d'arrivée</th> 
+                </tr>
+            </thead>
+            <tbody id="trajets-table-body"></tbody>
+        </table>
+    </div>
+    
+
+    <div id="moyenne-container" class="table-container">
+        <div style="display: flex; align-items: flex-start; gap: 20px;">
+            <div>
+                <table>
+                    <caption>Matrice des Moyennes de durée (en min)</caption>
+                    <thead id="moyenne-table-head"></thead>
+                    <tbody id="moyenne-table-body"></tbody>
+                </table>
+            </div>
+            <div id="legend-moyenne" style="min-width: 200px; padding: 15px; margin-top: 25px;">
+                
+            </div>
+        </div>
+    </div>
+    
+    <div id="freq-container" class="table-container">
+        <div style="display: flex; align-items: flex-start; gap: 20px;">
+            <div>
+                <table>
+                    <caption>Matrice des Fréquences</caption>
+                    <thead id="freq-table-head"></thead>
+                    <tbody id="freq-table-body"></tbody>
+                </table>
+            </div>
+            <div id="legend-freq" style="min-width: 200px; padding: 15px; margin-top: 25px;">
+                
+            </div>
+        </div>
+    </div>
+    
+    <div id="min-container" class="table-container">
+        <div style="display: flex; align-items: flex-start; gap: 20px;">
+            <div>
+                <table>
+                    <caption>Temps minimal (en min)</caption>
+                    <thead id="min-table-head"></thead>
+                    <tbody id="min-table-body"></tbody>
+                </table>
+            </div>
+            <div id="legend-min" style="min-width: 200px; padding: 15px; margin-top: 25px;">
+            
+            </div>
+        </div>
+    </div>
+    
+    <div id="max-container" class="table-container">
+        <div style="display: flex; align-items: flex-start; gap: 20px;">
+            <div>
+                <table>
+                    <caption>Temps maximal (en min)</caption>
+                    <thead id="max-table-head"></thead>
+                    <tbody id="max-table-body"></tbody>
+                </table>
+            </div>
+            <div id="legend-max" style="min-width: 200px; padding: 15px; margin-top: 25px;">
+            
+            </div>
+        </div>
+    </div>
+
+    <div id="ecart_type-container" class="table-container">
+        <div style="display: flex; align-items: flex-start; gap: 20px;">
+            <div>
+                <table>
+                    <caption>Ecart Type</caption>
+                    <thead id="ecart_type-head"></thead>
+                    <tbody id="ecart_type-body"></tbody>
+                </table>
+            </div>
+            <div id="legend-ecart_type" style="min-width: 200px; padding: 15px; margin-top: 25px;">
+            
+            </div>
+        </div>
+    </div>
+    
+
+<style>
+    .table-container { display: none; }
+    th, td { padding: 7px; text-align: center; }
+    table { margin: 20px; border-collapse: collapse; width: 100%; }
+    button { margin: 10px; padding: 10px; cursor: pointer; }
+
+</style>
+
+{% endif %}
+{% endblock %}

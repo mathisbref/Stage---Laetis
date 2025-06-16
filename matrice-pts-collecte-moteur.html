@@ -1,0 +1,158 @@
+{% extends 'supervision/app.html' %}
+{% load outils_extras humanize %}
+
+{% block title %}Matrice Points Collecte - Colactis{% endblock %}
+
+{% block content %}
+    <h1>
+        <a href="{% url 'supervision:dashboard' %}" class="left mr-10 btn btn-floating btn-small btn-flat grey lighten-1">
+            <i class="material-icons">arrow_back</i>
+        </a>
+        Matrice Points Collecte
+    </h1>
+
+    <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/fr.js"></script>
+
+    <script type='text/javascript'>
+        var producteurs = {{ producteurs_json|safe }};
+    </script>
+    
+    <div id="app" style="margin: 20px;">
+        <p>
+            <span v-for="i in annees" :key="i">
+                <a @click="event => setAnnee(event, i)" href="#">[[ i ]]</a>
+                &nbsp;
+            </span>
+            <input id="dateRange" type="text" placeholder="Choisir intervalle de dates.." readonly="readonly">
+        </p>
+        
+        <div>
+            <p>Filtrer producteurs</p>
+            <div v-if="fProds" class="row">
+                <div v-for="p in producteurs" :key="p.pk" class="col s4">
+                    <label>
+                        <input type="checkbox" class="filled-in" v-model="p.select" />
+                        <span>[[ p.id_public ]] - [[ p.raison_sociale ]]</span>
+                    </label>
+                </div>
+                <p class="col">
+                    <a v-on:click="tousProds" href="#">Cocher tous</a> /
+                    <a v-on:click="aucunProd" href="#">Décocher tous</a> /
+                    <a v-on:click="seulementMembres" href="#">Membres actuels</a>
+                </p>
+                
+            </div>
+        </div>
+
+        <div>
+            <button v-on:click="recherche" class="btn" style="margin-top:20px;"
+                    :disabled="dateDeb == '' || dateFin == ''">Afficher bilan</button>
+        </div>
+    </div>
+
+    <script>
+        var app = new Vue({
+            delimiters: ['[[', ']]'],
+            el: '#app',
+            data: {
+                datePickers: {},
+                dateDeb: '',
+                dateFin: '',
+                annees: [2015],
+                fProds: true,
+                producteurs: producteurs
+            },
+            methods: {
+                recherche: function(event) {
+                    event.preventDefault();
+                    var params = ['dates=' + this.dateDeb + '~' + this.dateFin];
+                    var pkProds = this.producteurs.filter(p => p.select).map(p => p.id_public);
+                    if (pkProds.length > 0) {
+                        params.push('prods=' + pkProds.join('~'));
+                    }
+                    var url = '{% url 'supervision:matrice_pts_collecte_moteur' %}/' + params.join('&');
+                    window.open(url, '_blank').focus();
+                },
+                tousProds: function(event) {
+                    event.preventDefault();
+                    this.producteurs.forEach(p => p.select = true);
+                },
+                aucunProd: function(event) {
+                    event.preventDefault();
+                    this.producteurs.forEach(p => p.select = false);
+                },
+                seulementMembres: function(event) {
+                    event.preventDefault();
+
+                    this.producteurs.forEach(p => {
+                        if (p.etat && p.etat !== "Ancien membre" && p.etat !== "Ponctuel") {
+                            p.select = true; 
+                        } else {
+                            p.select = false; 
+                        }
+                    });
+                },
+                miseAJourSelection: function() {
+                    if (!this.dateFin) return; 
+
+                    let dateFinSelectionnee = new Date(this.dateFin); 
+
+                    this.producteurs.forEach(p => {
+                        if (p.date_entree_gie && p.etat !== "Ancien membre") {
+                            let dateEntree = new Date(p.date_entree_gie);
+                            p.select = dateEntree <= dateFinSelectionnee; 
+                        } else {
+                            p.select = false; 
+                        }
+                    });
+                },
+
+
+                setAnnee: function(event, annee) {
+                    event.preventDefault();
+                    this.dateDeb = annee + '-01-01';
+                    this.dateFin = annee + '-12-31';
+                    this.flatpickr.setDate([this.dateDeb, this.dateFin]);
+                    this.miseAJourSelection();
+                }
+            },
+            mounted: function() {
+                for (let annee = this.annees[0] + 1, anneeCourante = new Date().getFullYear(); annee <= anneeCourante; annee++) {
+                    this.annees.push(annee);
+                }
+
+                this.producteurs.forEach(p => p.select = false); // à voir avec quentin pourquoi il en coche par défaut
+
+                this.flatpickr = flatpickr("#dateRange", { 
+                    locale: 'fr',
+                    altInput: true,
+                    altFormat: 'd/m/Y',
+                    dateFormat: 'Y-m-d', 
+                    mode: "range",
+                    onChange: (selectedDates) => {
+                        this.dateDeb = selectedDates[0] ? flatpickr.formatDate(selectedDates[0], 'Y-m-d') : '';
+                        this.dateFin = selectedDates[1] ? flatpickr.formatDate(selectedDates[1], 'Y-m-d') : '';
+                        this.miseAJourSelection();
+                    }
+                });
+            }
+        });
+    </script>
+
+<style>
+    .switch label input[type=checkbox]:checked + .lever {
+        background-color: #8be897;
+    }
+    span.badge {
+        min-width: 0;
+        padding: 0;
+        width: 22px;
+        margin-left: 10px;
+        border-radius: 50%;
+        overflow: hidden;
+    }
+</style>
+{% endblock %}
